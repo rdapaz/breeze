@@ -19,6 +19,43 @@ A CoffeeScript-inspired language that compiles to Lua 5.1. Breeze adds modern sy
 - **`@` shorthand** for `self.` references
 - **Import/export** module system
 
+## Use Cases
+
+Because Breeze compiles to standard Lua 5.1, it can target any application that embeds Lua as a scripting engine. Write cleaner, more readable code in Breeze and transpile to Lua for deployment.
+
+### Wireshark Dissectors
+
+Write custom protocol dissectors with readable, concise syntax instead of verbose Lua. Breeze's string interpolation, clean control flow, and indentation-based blocks make dissector code significantly easier to author and maintain.
+
+```bash
+# Compile dissector to Lua
+lua breeze.lua -c examples/wireshark_dissectors/modbus_tcp.bz > modbus_tcp.lua
+
+# Install: copy the .lua file to Wireshark's plugins folder
+#   Windows: %APPDATA%\Wireshark\plugins\
+#   Linux:   ~/.local/lib/wireshark/plugins/
+#   macOS:   ~/.local/lib/wireshark/plugins/
+```
+
+See [`examples/wireshark_dissectors/`](examples/wireshark_dissectors/) for included dissectors.
+
+### Nmap NSE Scripts
+
+The Nmap Scripting Engine (NSE) runs Lua 5.1 — write network scanning scripts in Breeze and compile to Lua for use with Nmap.
+
+```bash
+lua breeze.lua -c my_scan.bz > my_scan.nse
+# Copy to Nmap's script directory
+```
+
+### Game Scripting & Modding
+
+Many game engines embed Lua for modding and scripting (LOVE2D, Corona/Solar2D, Defold, WoW addons, Roblox, etc.). Use Breeze for a more expressive scripting experience, then compile to Lua for the target engine.
+
+### Embedded Systems & IoT
+
+Lua is widely used in embedded contexts (OpenWrt, NodeMCU/ESP8266, Redis scripting). Breeze lets you write more maintainable configuration and automation scripts that compile down to standard Lua.
+
 ## Quick Start
 
 Requires **Lua 5.1** (or LuaJIT).
@@ -91,6 +128,35 @@ describe = (val) ->
     else
       "something else"
 ```
+
+### Wireshark Dissector (Modbus TCP)
+
+```coffee
+proto = Proto("modbus_bz", "Modbus TCP (Breeze)")
+
+f_trans_id  = ProtoField.uint16("modbus_bz.trans_id", "Transaction ID", base.HEX)
+f_func_code = ProtoField.uint8("modbus_bz.func_code", "Function Code", base.HEX)
+
+func_names = {
+  [0x03]: "Read Holding Registers",
+  [0x06]: "Write Single Register",
+  [0x10]: "Write Multiple Registers"
+}
+
+proto.dissector = (buffer, pinfo, tree) ->
+  if buffer:len() < 8
+    return
+  pinfo.cols.protocol = "Modbus TCP"
+  subtree = tree:add(proto, buffer(), "Modbus TCP")
+  func_code = buffer(7, 1):uint()
+  pinfo.cols.info = "Unit #{buffer(6,1):uint()}: #{func_names[func_code]}"
+  # ... parse fields ...
+
+tcp_table = DissectorTable.get("tcp.port")
+tcp_table:add(502, proto)
+```
+
+See [`examples/wireshark_dissectors/modbus_tcp.bz`](examples/wireshark_dissectors/modbus_tcp.bz) for the full dissector.
 
 ## Breeze vs Lua at a Glance
 
