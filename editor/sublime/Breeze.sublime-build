@@ -1,0 +1,12 @@
+{
+  "cmd": ["lua", "breeze.lua", "$file"],
+  "selector": "source.breeze",
+  "file_regex": "^(...*?):([0-9]+):?([0-9]+)?:? (.*)$",
+  "working_dir": "$file_path",
+  "variants": [
+    {
+      "name": "Compile to Lua",
+      "cmd": ["lua", "breeze.lua", "-c", "$file"]
+    }
+  ]
+}

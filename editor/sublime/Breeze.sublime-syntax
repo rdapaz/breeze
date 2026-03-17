@@ -1,0 +1,196 @@
+%YAML 1.2
+---
+name: Breeze
+file_extensions:
+  - bz
+scope: source.breeze
+
+contexts:
+  main:
+    - include: comments
+    - include: strings
+    - include: numbers
+    - include: keywords
+    - include: operators
+    - include: classes
+    - include: functions
+    - include: constants
+    - include: variables
+    - include: punctuation
+
+  comments:
+    # Line comments — but NOT # as length operator
+    # We use a lookbehind to avoid matching after [, (, =, operators, keywords
+    - match: '(?<=^)\s*#.*$'
+      scope: comment.line.breeze
+    - match: '(?<=\s)#(?!\{)\s.*$'
+      scope: comment.line.breeze
+
+  strings:
+    # Double-quoted strings with interpolation
+    - match: '"'
+      scope: punctuation.definition.string.begin.breeze
+      push: double-quoted-string
+    # Single-quoted strings
+    - match: "'"
+      scope: punctuation.definition.string.begin.breeze
+      push: single-quoted-string
+
+  double-quoted-string:
+    - meta_scope: string.quoted.double.breeze
+    - match: '\\[nrt\\"#]'
+      scope: constant.character.escape.breeze
+    - match: '#\{'
+      scope: punctuation.section.interpolation.begin.breeze
+      push: interpolation
+    - match: '"'
+      scope: punctuation.definition.string.end.breeze
+      pop: true
+
+  single-quoted-string:
+    - meta_scope: string.quoted.single.breeze
+    - match: "\\[nrt\\']"
+      scope: constant.character.escape.breeze
+    - match: "'"
+      scope: punctuation.definition.string.end.breeze
+      pop: true
+
+  interpolation:
+    - clear_scopes: 1
+    - meta_scope: meta.interpolation.breeze
+    - match: '\}'
+      scope: punctuation.section.interpolation.end.breeze
+      pop: true
+    - include: main
+
+  numbers:
+    - match: '\b0[xX][0-9a-fA-F]+\b'
+      scope: constant.numeric.hex.breeze
+    - match: '\b[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?\b'
+      scope: constant.numeric.breeze
+
+  keywords:
+    # Control flow
+    - match: '\b(if|else|elseif|unless|then)\b'
+      scope: keyword.control.conditional.breeze
+    - match: '\b(for|while|until|in|of|do|break)\b'
+      scope: keyword.control.loop.breeze
+    - match: '\b(switch|when)\b'
+      scope: keyword.control.switch.breeze
+    - match: '\b(try|catch|finally)\b'
+      scope: keyword.control.exception.breeze
+    - match: '\b(return)\b'
+      scope: keyword.control.flow.breeze
+    # Module
+    - match: '\b(import|from|export)\b'
+      scope: keyword.control.import.breeze
+    # OOP
+    - match: '\b(class)\b'
+      scope: keyword.declaration.class.breeze
+    - match: '\b(extends)\b'
+      scope: keyword.declaration.extends.breeze
+    - match: '\b(new)\b'
+      scope: keyword.operator.new.breeze
+    # Logic
+    - match: '\b(and|or|not)\b'
+      scope: keyword.operator.logical.breeze
+    - match: '\b(typeof)\b'
+      scope: keyword.operator.typeof.breeze
+
+  constants:
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.breeze
+    - match: '\b(nil)\b'
+      scope: constant.language.null.breeze
+    - match: '\.\.\.'
+      scope: constant.language.varargs.breeze
+
+  operators:
+    # Arrows
+    - match: '=>'
+      scope: storage.type.function.fat-arrow.breeze
+    - match: '->'
+      scope: storage.type.function.arrow.breeze
+    # Compound assignment
+    - match: '(\+|-|\*|/|\.\.|%)='
+      scope: keyword.operator.assignment.compound.breeze
+    # Comparison
+    - match: '==|!=|<=|>=|<|>'
+      scope: keyword.operator.comparison.breeze
+    # Assignment
+    - match: '='
+      scope: keyword.operator.assignment.breeze
+    # Arithmetic
+    - match: '\+|-|\*|/|%|\^'
+      scope: keyword.operator.arithmetic.breeze
+    # String concat
+    - match: '\.\.'
+      scope: keyword.operator.concat.breeze
+    # Existential
+    - match: '\?'
+      scope: keyword.operator.existential.breeze
+
+  classes:
+    # Class definition
+    - match: '\b(class)\s+([A-Z]\w*)'
+      captures:
+        1: keyword.declaration.class.breeze
+        2: entity.name.class.breeze
+    # Extends
+    - match: '\b(extends)\s+([A-Z]\w*)'
+      captures:
+        1: keyword.declaration.extends.breeze
+        2: entity.other.inherited-class.breeze
+    # new ClassName
+    - match: '\b(new)\s+([A-Z]\w*)'
+      captures:
+        1: keyword.operator.new.breeze
+        2: support.class.breeze
+
+  functions:
+    # Method definition in class: name: ->
+    - match: '^\s*(\w+)\s*(:)\s*(?=[\(->=>])'
+      captures:
+        1: entity.name.function.breeze
+        2: punctuation.separator.breeze
+    # Function assignment: name = (...) ->
+    - match: '\b(\w+)\s*(=)\s*(?=\(.*\)\s*[-=]>)'
+      captures:
+        1: entity.name.function.breeze
+        2: keyword.operator.assignment.breeze
+    # Function assignment: name = ->
+    - match: '\b(\w+)\s*(=)\s*(?=[-=]>)'
+      captures:
+        1: entity.name.function.breeze
+        2: keyword.operator.assignment.breeze
+    # Function call
+    - match: '\b(\w+)(?=\()'
+      scope: variable.function.breeze
+    # Method call: :method(
+    - match: '(:)(\w+)(?=\()'
+      captures:
+        1: punctuation.accessor.breeze
+        2: variable.function.breeze
+
+  variables:
+    # @ self access: @field
+    - match: '@(\w+)'
+      scope: variable.other.member.breeze
+    # Bare @
+    - match: '@'
+      scope: variable.language.self.breeze
+    # Length operator
+    - match: '#(?=\w|@|\()'
+      scope: keyword.operator.length.breeze
+
+  punctuation:
+    - match: '[{}]'
+      scope: punctuation.section.braces.breeze
+    - match: '[\[\]]'
+      scope: punctuation.section.brackets.breeze
+    - match: '[()]'
+      scope: punctuation.section.parens.breeze
+    - match: ','
+      scope: punctuation.separator.breeze
+    - match: '\.'
+      scope: punctuation.accessor.breeze

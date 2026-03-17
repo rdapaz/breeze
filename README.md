@@ -104,6 +104,12 @@ describe = (val) ->
 | `for item in items` | `for _, item in ipairs(items) do ... end` |
 | `@name = name` | `self.name = name` |
 
+## Editor Support
+
+### Sublime Text
+
+Full syntax highlighting, build system, and editor settings included. See [`editor/sublime/`](editor/sublime/) for installation instructions.
+
 ## Documentation
 
 See [REFERENCE.md](REFERENCE.md) for the complete language reference.
