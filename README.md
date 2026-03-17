@@ -2,6 +2,8 @@
 
 A CoffeeScript-inspired language that compiles to Lua 5.1. Breeze adds modern syntactic sugar — significant whitespace, arrow functions, string interpolation, classes with inheritance, list comprehensions, and more — while targeting the lightweight, embeddable Lua runtime.
 
+**Zero dependencies** — the compiler is a single Lua file with no external libraries required. No LPeg, no C extensions, no build step. If you have `lua` (5.1+), you have Breeze. This makes it trivially deployable anywhere Lua runs: Wireshark plugins, Nmap scripts, embedded devices, game engines, CI pipelines.
+
 ## Features
 
 - **Indentation-based blocks** — no `end` keywords

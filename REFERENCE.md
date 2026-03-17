@@ -533,6 +533,119 @@ obj:method(arg)           # method call with : (passes self)
 
 ---
 
+## Pattern Matching (Regex)
+
+Lua 5.1 doesn't have traditional regular expressions — it has **Lua patterns**, a lighter
+but capable subset. Since Breeze compiles to Lua, you use the standard `string` library directly.
+
+### Basic Operations
+
+```coffee
+# string.match — extract captures
+ip = "192.168.1.100"
+a, b, c, d = string.match(ip, "(%d+)%.(%d+)%.(%d+)%.(%d+)")
+print("#{a}.#{b}.#{c}.#{d}")
+
+# string.find — locate a pattern (returns start, end positions)
+s = "Hello World"
+start, stop = string.find(s, "Wor")
+
+# string.gmatch — iterate all matches
+text = "key1=val1&key2=val2&key3=val3"
+for k, v in string.gmatch(text, "(%w+)=(%w+)")
+  print("#{k} -> #{v}")
+
+# string.gsub — find and replace
+cleaned = string.gsub("  hello   world  ", "%s+", " ")
+
+# Method syntax works too (colon calls)
+result = s:match("(%w+)")
+cleaned = s:gsub("%s+", " ")
+pos = s:find("World")
+```
+
+### Pattern Character Classes
+
+| Pattern | Matches |
+|---------|---------|
+| `.` | Any character |
+| `%a` | Letters (A-Z, a-z) |
+| `%d` | Digits (0-9) |
+| `%w` | Alphanumeric (letters + digits) |
+| `%s` | Whitespace |
+| `%p` | Punctuation |
+| `%l` / `%u` | Lower / upper case |
+| `%A`, `%D`, etc. | Complement (non-letters, non-digits, etc.) |
+| `[abc]` | Character set |
+| `[^abc]` | Negated character set |
+| `[a-z]` | Character range |
+
+### Quantifiers
+
+| Pattern | Meaning |
+|---------|---------|
+| `*` | 0 or more (greedy) |
+| `+` | 1 or more (greedy) |
+| `-` | 0 or more (lazy) |
+| `?` | 0 or 1 |
+
+### Anchors & Captures
+
+| Pattern | Meaning |
+|---------|---------|
+| `^` | Start of string |
+| `$` | End of string |
+| `(...)` | Capture group |
+| `%1`, `%2` | Back-references (in `gsub` replacement only) |
+
+### Escaping Special Characters
+
+Use `%` to escape magic characters: `( ) . % + - * ? [ ^ $`
+
+```coffee
+# Match a literal dot
+version = string.match("lua-5.1.4", "(%d+%.%d+%.%d+)")
+print(version)  # "5.1.4"
+```
+
+### Practical Examples
+
+```coffee
+# Validate an email (basic)
+is_email = (s) -> s:match("^[%w%.%-]+@[%w%.%-]+%.%w+$") != nil
+
+# Extract filename from path
+path = "/home/user/docs/report.pdf"
+filename = path:match("([^/]+)$")
+print(filename)  # "report.pdf"
+
+# Split a string by delimiter
+split = (s, sep) ->
+  parts = []
+  for part in s:gmatch("([^" .. sep .. "]+)")
+    parts[#parts + 1] = part
+  parts
+
+words = split("hello,world,breeze", ",")
+
+# Strip ANSI escape codes
+strip_ansi = (s) -> s:gsub("\27%[%d+m", "")
+```
+
+### Differences from Regular Expressions
+
+- **No alternation** (`|`) — can't do `cat|dog`
+- **`%d` not `\d`** — percent prefix, not backslash
+- **Lazy quantifier is `-`** not `*?`
+- **No `{n,m}` repetition** quantifiers
+- **No lookahead/lookbehind**
+- **No backreferences in patterns** (only in `gsub` replacements)
+
+For most practical tasks (parsing protocols, log files, configuration) Lua patterns are
+more than sufficient. For full PCRE, use the `lrexlib` Lua library if available.
+
+---
+
 ## CLI Usage
 
 ```
