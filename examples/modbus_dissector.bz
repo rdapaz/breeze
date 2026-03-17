@@ -1,0 +1,125 @@
+# Modbus TCP Dissector for Wireshark
+# Compile: lua breeze.lua -c modbus_dissector.bz > modbus_dissector.lua
+# Install: copy modbus_dissector.lua to Wireshark plugins folder
+#   Windows: %APPDATA%\Wireshark\plugins\
+#   Linux:   ~/.local/lib/wireshark/plugins/
+#   macOS:   ~/.local/lib/wireshark/plugins/
+
+# --- Protocol declaration ---
+
+proto = Proto("modbus_bz", "Modbus TCP (Breeze)")
+
+# --- MBAP Header fields (7 bytes) ---
+
+f_trans_id  = ProtoField.uint16("modbus_bz.trans_id",  "Transaction ID", base.HEX)
+f_proto_id  = ProtoField.uint16("modbus_bz.proto_id",  "Protocol ID",    base.HEX)
+f_length    = ProtoField.uint16("modbus_bz.length",    "Length",          base.DEC)
+f_unit_id   = ProtoField.uint8("modbus_bz.unit_id",    "Unit ID",        base.DEC)
+
+# --- PDU fields ---
+
+f_func_code = ProtoField.uint8("modbus_bz.func_code",  "Function Code",  base.HEX)
+f_data      = ProtoField.bytes("modbus_bz.data",       "Data")
+
+# Common request/response fields
+f_ref_num   = ProtoField.uint16("modbus_bz.ref_num",   "Reference Number", base.DEC)
+f_word_cnt  = ProtoField.uint16("modbus_bz.word_count", "Word Count",      base.DEC)
+f_byte_cnt  = ProtoField.uint8("modbus_bz.byte_count", "Byte Count",      base.DEC)
+f_exc_code  = ProtoField.uint8("modbus_bz.exc_code",   "Exception Code",  base.HEX)
+
+proto.fields = [f_trans_id, f_proto_id, f_length, f_unit_id, f_func_code, f_data, f_ref_num, f_word_cnt, f_byte_cnt, f_exc_code]
+
+# --- Function code lookup ---
+
+func_names = {
+  [0x01]: "Read Coils",
+  [0x02]: "Read Discrete Inputs",
+  [0x03]: "Read Holding Registers",
+  [0x04]: "Read Input Registers",
+  [0x05]: "Write Single Coil",
+  [0x06]: "Write Single Register",
+  [0x0F]: "Write Multiple Coils",
+  [0x10]: "Write Multiple Registers",
+  [0x17]: "Read/Write Multiple Registers"
+}
+
+get_func_name = (code) ->
+  name = func_names[code]
+  if name
+    name
+  else
+    if code >= 0x80
+      "Exception"
+    else
+      "Unknown"
+
+# --- Dissector function ---
+
+proto.dissector = (buffer, pinfo, tree) ->
+  # Need at least 8 bytes (7 MBAP + 1 function code)
+  if buffer:len() < 8
+    return
+
+  pinfo.cols.protocol = "Modbus TCP"
+
+  subtree = tree:add(proto, buffer(), "Modbus TCP")
+
+  # MBAP Header
+  mbap = subtree:add(proto, buffer(0, 7), "MBAP Header")
+  mbap:add(f_trans_id, buffer(0, 2))
+  mbap:add(f_proto_id, buffer(2, 2))
+  mbap:add(f_length,   buffer(4, 2))
+  mbap:add(f_unit_id,  buffer(6, 1))
+
+  # PDU
+  func_code = buffer(7, 1):uint()
+  func_name = get_func_name(func_code)
+  is_exception = func_code >= 0x80
+
+  pdu_label = "PDU: #{func_name} (0x#{string.format('%02X', func_code)})"
+  pdu = subtree:add(proto, buffer(7), pdu_label)
+  pdu:add(f_func_code, buffer(7, 1))
+
+  # Info column
+  unit_id = buffer(6, 1):uint()
+  pinfo.cols.info = "Unit #{unit_id}: #{func_name}"
+
+  # Parse PDU data based on function code
+  if is_exception and buffer:len() >= 9
+    pdu:add(f_exc_code, buffer(8, 1))
+    exc = buffer(8, 1):uint()
+    pinfo.cols.info:append(" (Exception #{exc})")
+  elseif func_code == 0x01 or func_code == 0x02 or func_code == 0x03 or func_code == 0x04
+    if buffer:len() >= 12
+      # Request: ref_num(2) + word_count(2)
+      pdu:add(f_ref_num,  buffer(8, 2))
+      pdu:add(f_word_cnt, buffer(10, 2))
+    elseif buffer:len() >= 10
+      # Response: byte_count(1) + data(N)
+      bc = buffer(8, 1):uint()
+      pdu:add(f_byte_cnt, buffer(8, 1))
+      if buffer:len() >= 9 + bc
+        pdu:add(f_data, buffer(9, bc))
+  elseif func_code == 0x05 or func_code == 0x06
+    # Write single: ref_num(2) + value(2)
+    if buffer:len() >= 12
+      pdu:add(f_ref_num, buffer(8, 2))
+      pdu:add(f_data,    buffer(10, 2))
+  elseif func_code == 0x0F or func_code == 0x10
+    # Write multiple: ref_num(2) + word_count(2) + byte_count(1) + data(N)
+    if buffer:len() >= 13
+      pdu:add(f_ref_num,  buffer(8, 2))
+      pdu:add(f_word_cnt, buffer(10, 2))
+      pdu:add(f_byte_cnt, buffer(12, 1))
+      bc = buffer(12, 1):uint()
+      if buffer:len() >= 13 + bc
+        pdu:add(f_data, buffer(13, bc))
+  else
+    # Unknown function — dump remaining as data
+    if buffer:len() > 8
+      pdu:add(f_data, buffer(8))
+
+# --- Register on TCP port 502 ---
+
+tcp_table = DissectorTable.get("tcp.port")
+tcp_table:add(502, proto)
