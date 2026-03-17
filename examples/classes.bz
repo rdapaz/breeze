@@ -1,0 +1,39 @@
+# Classes in Breeze
+
+class Animal
+  constructor: (@name, @sound = "...") ->
+    @legs = 4
+
+  speak: ->
+    "#{@name} says #{@sound}"
+
+  describe: ->
+    "#{@name} has #{@legs} legs"
+
+class Dog extends Animal
+  constructor: (@name) ->
+    @sound = "Woof!"
+    @tricks = []
+
+  learn: (trick) ->
+    @tricks[#@tricks + 1] = trick
+    "#{@name} learned #{trick}!"
+
+  show_tricks: ->
+    if #@tricks == 0
+      "#{@name} knows no tricks"
+    else
+      for trick in @tricks
+        print("  - #{trick}")
+
+# Create instances
+rex = new Dog("Rex")
+print(rex:speak())
+print(rex:describe())
+print(rex:learn("sit"))
+print(rex:learn("shake"))
+print("#{rex.name}'s tricks:")
+rex:show_tricks()
+
+cat = new Animal("Whiskers", "Meow")
+print(cat:speak())

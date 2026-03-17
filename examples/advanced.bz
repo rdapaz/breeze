@@ -1,0 +1,66 @@
+# Switch/when
+day = "monday"
+switch day
+  when "monday", "tuesday", "wednesday", "thursday", "friday"
+    print("Weekday")
+  when "saturday", "sunday"
+    print("Weekend")
+  else
+    print("Unknown day")
+
+# Try/catch
+try
+  x = 10 / 0
+  print("Result: #{x}")
+catch err
+  print("Error: #{err}")
+finally
+  print("Done!")
+
+# For..of (pairs iteration)
+config = {host: "localhost", port: 8080, debug: true}
+for key, value of config
+  print("#{key} = #{value}")
+
+# Numeric for
+for i = 1, 5
+  print("counting: #{i}")
+
+# Existential operator
+maybe_nil = nil
+print("exists?")
+if maybe_nil?
+  print("yes")
+else
+  print("no")
+
+# Default parameters
+greet = (name, greeting = "Hello") ->
+  "#{greeting}, #{name}!"
+
+print(greet("Alice"))
+print(greet("Bob", "Hi"))
+
+# Fat arrow (self binding)
+class Counter
+  constructor: ->
+    @count = 0
+
+  increment: ->
+    @count += 1
+    @count
+
+  get_incrementer: ->
+    =>
+      @count += 1
+      @count
+
+counter = new Counter()
+counter:increment()
+counter:increment()
+print("Count: #{counter.count}")
+
+# Typeof
+print("type of 42: #{typeof 42}")
+print("type of 'hi': #{typeof 'hi'}")
+print("type of true: #{typeof true}")

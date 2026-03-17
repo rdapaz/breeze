@@ -1,0 +1,53 @@
+# Variables and basic expressions
+name = "World"
+greeting = "Hello #{name}!"
+print(greeting)
+
+# Arrow functions with implicit return
+square = (x) -> x * x
+cube = (x) -> x * x * x
+print("5 squared = #{square(5)}")
+print("3 cubed = #{cube(3)}")
+
+# Multi-line functions
+fibonacci = (n) ->
+  if n <= 1
+    n
+  else
+    fibonacci(n - 1) + fibonacci(n - 2)
+
+print("fib(10) = #{fibonacci(10)}")
+
+# Unless and postfix conditionals
+x = 42
+print("x is big") if x > 10
+print("x is not nil") unless x == nil
+
+# For loops
+for item in [1, 2, 3, 4, 5]
+  print("item: #{item}")
+
+# List comprehensions
+doubles = [n * 2 for n in [1, 2, 3, 4, 5]]
+evens = [n for n in [1, 2, 3, 4, 5, 6, 7, 8] if n % 2 == 0]
+
+for d in [n * 2 for n in [1, 2, 3, 4, 5]]
+  print("double: #{d}")
+
+for e in evens
+  print("even: #{e}")
+
+# Object literals
+person = {name: "Alice", age: 30}
+print("#{person.name} is #{person.age}")
+
+# Compound assignment
+count = 0
+count += 10
+count -= 3
+print("count = #{count}")
+
+# String concat
+msg = "hello"
+msg ..= " world"
+print(msg)
