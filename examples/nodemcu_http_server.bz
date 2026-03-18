@@ -1,0 +1,24 @@
+# NodeMCU ESP8266 Wi-Fi HTTP Server
+# Source: NodeMCU firmware docs / ElectronicWings
+
+wifi.setmode(wifi.STATION)
+wifi.sta.config({ssid: "YOUR_SSID", pwd: "YOUR_PASSWORD"})
+
+tmr.alarm(1, 1000, tmr.ALARM_AUTO, ->
+  if wifi.sta.getip() == nil
+    print("Connecting...")
+  else
+    tmr.stop(1)
+    print("IP: #{wifi.sta.getip()}")
+
+    srv = net.createServer(net.TCP)
+    srv:listen(80, (conn) ->
+      conn:on("receive", (sck, payload) ->
+        print(payload)
+        response = "HTTP/1.1 200 OK\r\n\r\n<html><body><h1>Hello from ESP8266!</h1><p>NodeMCU is running.</p></body></html>"
+        sck:send(response, ->
+          sck:close()
+        )
+      )
+    )
+)

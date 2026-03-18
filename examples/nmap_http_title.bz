@@ -1,0 +1,51 @@
+# Nmap NSE Script: http-title
+# Source: nmap/nmap official repo (adapted)
+# Shows the title of the default page of a web server
+
+http = require("http")
+shortport = require("shortport")
+stdnse = require("stdnse")
+
+export description = "Shows the title of the default page of a web server."
+export author = "Diman Todorov"
+export license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
+export categories = {"default", "discovery", "safe"}
+
+export portrule = shortport.http
+
+export action = (host, port) ->
+  resp = http.get(host, port, stdnse.get_script_args(SCRIPT_NAME .. ".url") or "/")
+
+  redirect_url = nil
+  if resp.location
+    redirect_url = resp.location[#resp.location]
+    if resp.status and tostring(resp.status):match("30%d")
+      return {redirect_url: redirect_url}, "Did not follow redirect to #{redirect_url}"
+
+  unless resp.body
+    return
+
+  title = string.match(resp.body, "<[Tt][Ii][Tt][Ll][Ee][^>]*>([^<]*)</[Tt][Ii][Tt][Ll][Ee]>")
+
+  display_title = title
+
+  if display_title and display_title != ""
+    display_title = string.gsub(display_title, "[\n\r\t]", "")
+    if #display_title > 65
+      display_title = string.sub(display_title, 1, 62) .. "..."
+  else
+    display_title = "Site doesn't have a title"
+    if resp.header and resp.header["content-type"]
+      display_title = display_title .. " (#{resp.header['content-type']})."
+    else
+      display_title = display_title .. "."
+
+  output_tab = stdnse.output_table()
+  output_tab.title = title
+  output_tab.redirect_url = redirect_url
+
+  output_str = display_title
+  if redirect_url
+    output_str = output_str .. "\nRequested resource was #{redirect_url}"
+
+  return output_tab, output_str

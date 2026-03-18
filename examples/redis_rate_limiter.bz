@@ -1,0 +1,17 @@
+# Redis Lua Rate Limiter (fixed-window)
+# Source: FreeCodeCamp
+# Usage: redis-cli EVAL "$(breeze -c redis_rate_limiter.bz)" 1 mykey 10 60
+
+key = KEYS[1]
+limit = tonumber(ARGV[1])
+window = tonumber(ARGV[2])
+current = redis.call("get", key)
+
+if current and tonumber(current) >= limit
+  return 0
+else
+  if current
+    redis.call("incr", key)
+  else
+    redis.call("set", key, 1, "EX", window)
+  return 1

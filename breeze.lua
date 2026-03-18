@@ -56,7 +56,7 @@ function Breeze.lex(source, filename)
   local indent_stack = {0}
   local at_line_start = true
   local paren_depth = 0
-  local arrow_indent = false  -- when truthy, holds the base indent level for arrow body inside parens
+  local arrow_indent_stack = {}  -- stack of base indent levels for nested arrow bodies inside parens
 
   local function char(offset)
     local i = pos + (offset or 0)
@@ -174,8 +174,8 @@ function Breeze.lex(source, filename)
         -- at_line_start stays true, loop again
       else
         at_line_start = false
-        -- Emit INDENT/DEDENT when outside parens, OR when tracking an arrow body inside parens
-        if paren_depth == 0 or arrow_indent then
+        -- Emit INDENT/DEDENT when outside parens, OR when tracking arrow bodies inside parens
+        if paren_depth == 0 or #arrow_indent_stack > 0 then
           local cur = indent_stack[#indent_stack]
           if ind > cur then
             indent_stack[#indent_stack+1] = ind; emit(T.INDENT, ind)
@@ -183,9 +183,9 @@ function Breeze.lex(source, filename)
             while #indent_stack > 1 and indent_stack[#indent_stack] > ind do
               indent_stack[#indent_stack] = nil; emit(T.DEDENT, ind)
             end
-            -- Once we dedent back to the arrow's call level, stop arrow mode
-            if arrow_indent and paren_depth > 0 and ind <= arrow_indent then
-              arrow_indent = false
+            -- Pop any arrow levels we've dedented past
+            while #arrow_indent_stack > 0 and paren_depth > 0 and ind <= arrow_indent_stack[#arrow_indent_stack] do
+              arrow_indent_stack[#arrow_indent_stack] = nil
             end
           end
         end
@@ -198,8 +198,8 @@ function Breeze.lex(source, filename)
       elseif c == "\n" then
         local last_type = #tokens > 0 and tokens[#tokens].type or nil
         local after_arrow = (last_type == T.ARROW or last_type == T.FATARROW)
-        if after_arrow then arrow_indent = indent_stack[#indent_stack] end
-        if (paren_depth == 0 or arrow_indent) and #tokens > 0 and last_type ~= T.NEWLINE and last_type ~= T.INDENT then
+        if after_arrow then arrow_indent_stack[#arrow_indent_stack+1] = indent_stack[#indent_stack] end
+        if (paren_depth == 0 or #arrow_indent_stack > 0) and #tokens > 0 and last_type ~= T.NEWLINE and last_type ~= T.INDENT then
           emit(T.NEWLINE, "\n")
         end
         advance(); at_line_start = true
@@ -333,6 +333,8 @@ function Breeze.parse(tokens, filename)
     return N("Str", {value=tok.value})
   end
 
+  local parse_postfix  -- forward declaration for use in parse_primary
+
   -- Table literal { key: val }
   local function parse_table()
     expect(T.LBRACE); skip_nl()
@@ -452,10 +454,10 @@ function Breeze.parse(tokens, filename)
       return N("Self", {})
     end
 
-    if is(T.NOT) then adv(); return N("Unop", {op="not", expr=parse_primary()}) end
-    if is(T.MINUS) then adv(); return N("Unop", {op="-", expr=parse_primary()}) end
-    if is(T.HASH) then adv(); return N("Unop", {op="#", expr=parse_primary()}) end
-    if is(T.TYPEOF) then adv(); return N("Unop", {op="typeof", expr=parse_primary()}) end
+    if is(T.NOT) then adv(); return N("Unop", {op="not", expr=parse_postfix(parse_primary())}) end
+    if is(T.MINUS) then adv(); return N("Unop", {op="-", expr=parse_postfix(parse_primary())}) end
+    if is(T.HASH) then adv(); return N("Unop", {op="#", expr=parse_postfix(parse_primary())}) end
+    if is(T.TYPEOF) then adv(); return N("Unop", {op="typeof", expr=parse_postfix(parse_primary())}) end
 
     if is(T.NEW) then
       adv(); local cls = parse_primary()
@@ -483,7 +485,7 @@ function Breeze.parse(tokens, filename)
   end
 
   -- Postfix: calls, indexing, member access
-  local function parse_postfix(expr)
+  parse_postfix = function(expr)
     while true do
       if is(T.DOT) then
         adv(); expr = N("Dot", {obj=expr, field=expect(T.IDENT).value})
@@ -720,8 +722,16 @@ function Breeze.parse(tokens, filename)
     local aop = aops[cur().type]
     if aop then
       adv(); skip_nl(); local val = parse_expr()
+      -- For compound assignment with postfix-if: x += 1 if cond -> if cond then x = x + 1 end
+      local postfix_tag, postfix_cond
+      if val.tag == "PostIf" or val.tag == "PostUnless" then
+        postfix_tag = val.tag; postfix_cond = val.cond; val = val.expr
+      end
       if aop ~= "=" then
         val = N("Binop", {op=aop:sub(1,-2), left=expr, right=val})
+      end
+      if postfix_tag then
+        val = N(postfix_tag, {expr=val, cond=postfix_cond})
       end
       return N("Assign", {target=expr, value=val})
     end
@@ -923,7 +933,17 @@ function Breeze.compile(ast, opts)
       end
     elseif t == "Assign" then
       local tgt = ce(n.target)
-      if n.target.tag == "Id" then
+      -- Postfix if/unless on assignment: x = val if cond -> if cond then x = val end
+      if n.value.tag == "PostIf" or n.value.tag == "PostUnless" then
+        local cond = ce(n.value.cond)
+        if n.value.tag == "PostUnless" then cond = "not ("..cond..")" end
+        local val = ce(n.value.expr)
+        if n.target.tag == "Id" and not is_declared(n.target.name) then declare(n.target.name) end
+        ln("if "..cond.." then")
+        lvl=lvl+1
+        if n.target.tag == "Id" then ln(tgt.." = "..val) else ln(tgt.." = "..val) end
+        lvl=lvl-1; ln("end")
+      elseif n.target.tag == "Id" then
         local is_new = not is_declared(n.target.name)
         if is_new then declare(n.target.name) end
         -- For function assignments to simple identifiers, use forward-declare pattern
@@ -1086,9 +1106,15 @@ function Breeze.compile(ast, opts)
         end
       end
     elseif t == "Export" then
+      -- Pre-declare so the inner Assign skips 'local' — making this a global
+      if n.stmt.tag == "Assign" and n.stmt.target.tag == "Id" then
+        declare(n.stmt.target.name)
+        exports[#exports+1] = n.stmt.target.name
+      elseif n.stmt.tag == "Class" then
+        declare(n.stmt.name)
+        exports[#exports+1] = n.stmt.name
+      end
       cs(n.stmt)
-      if n.stmt.tag == "Assign" and n.stmt.target.tag == "Id" then exports[#exports+1] = n.stmt.target.name
-      elseif n.stmt.tag == "Class" then exports[#exports+1] = n.stmt.name end
     elseif t == "Block" then cb(n)
     end
   end

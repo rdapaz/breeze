@@ -1,0 +1,57 @@
+# Minimal Pong in LOVE2D
+# Source: Gist by 2bt (adapted)
+# Run: love . (with conf.lua setting window size)
+
+isDown = love.keyboard.isDown
+bool = {[true]: 1, [false]: 0}
+speed = 3
+ball = {x: 0, y: 0, vx: 0 - speed, vy: speed}
+pad1_y = 0
+pad2_y = 0
+score1 = 0
+score2 = 0
+
+clamp = (val, lo, hi) ->
+  if val < lo
+    lo
+  elseif val > hi
+    hi
+  else
+    val
+
+love.update = ->
+  pad1_y = clamp(pad1_y + (bool[isDown("a")] - bool[isDown("q")]) * 7, -250, 250)
+  pad2_y = clamp(pad2_y + (bool[isDown("down")] - bool[isDown("up")]) * 7, -250, 250)
+  ball.x += ball.vx
+  ball.y += ball.vy
+  if math.abs(ball.y) >= 285
+    ball.vy = 0 - ball.vy
+  if ball.x < -325 and ball.x > -350 and math.abs(pad1_y - ball.y) < 60
+    speed += 0.2
+    ball.x = -325
+    ball.vx = speed
+    ball.vy = ball.vy * 0.5 + math.random(-10, 10) / 20 * speed
+  if ball.x < -415
+    ball.x = 0
+    ball.vx = 0 - ball.vx
+    score2 += 1
+  if ball.x > 325 and ball.x < 350 and math.abs(pad2_y - ball.y) < 60
+    speed += 0.5
+    ball.x = 325
+    ball.vx = 0 - speed
+    ball.vy = ball.vy * 0.8 + math.random(-10, 10) / 10 * speed
+  if ball.x > 415
+    ball.x = 0
+    ball.vx = 0 - ball.vx
+    score1 += 1
+  if score1 > 6 or score2 > 6
+    print("player #{score1 > score2 and 1 or 2} wins.")
+    love.event.quit()
+
+love.draw = ->
+  love.graphics.translate(400, 300)
+  love.graphics.rectangle("fill", -360, pad1_y - 50, 20, 100)
+  love.graphics.rectangle("fill", 340, pad2_y - 50, 20, 100)
+  love.graphics.circle("fill", ball.x, ball.y, 15)
+  love.graphics.print(score1, -380, -280)
+  love.graphics.print(score2, 370, -280)
