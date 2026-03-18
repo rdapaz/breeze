@@ -1,0 +1,39 @@
+# ESP32 LED Blink with WiFi — Breeze for NodeMCU
+# Compile with: breeze -c esp32_blink.bz > init.lua
+# Upload init.lua to the ESP32
+
+# Config
+LED_PIN = 2
+WIFI_SSID = "MyNetwork"
+WIFI_PASS = "MyPassword"
+
+# Setup GPIO
+gpio.config({gpio: LED_PIN, dir: gpio.OUT})
+
+# Blink timer
+led_state = false
+
+blink_timer = tmr.create()
+blink_timer:alarm(500, tmr.ALARM_REP, ->
+  led_state = not led_state
+  if led_state
+    gpio.write(LED_PIN, 1)
+  else
+    gpio.write(LED_PIN, 0)
+)
+
+# Connect to WiFi
+wifi.mode(wifi.STATION, true)
+wifi.sta.config({ssid: WIFI_SSID, pwd: WIFI_PASS, auto: true})
+
+wifi.sta.on("got_ip", (name, info) ->
+  print("WiFi connected!")
+  print("IP: #{info.ip}")
+  print("Gateway: #{info.gw}")
+)
+
+wifi.sta.on("disconnected", ->
+  print("WiFi disconnected, retrying...")
+)
+
+print("Starting up...")

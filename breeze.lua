@@ -56,6 +56,7 @@ function Breeze.lex(source, filename)
   local indent_stack = {0}
   local at_line_start = true
   local paren_depth = 0
+  local arrow_indent = false  -- when truthy, holds the base indent level for arrow body inside parens
 
   local function char(offset)
     local i = pos + (offset or 0)
@@ -173,13 +174,18 @@ function Breeze.lex(source, filename)
         -- at_line_start stays true, loop again
       else
         at_line_start = false
-        if paren_depth == 0 then
+        -- Emit INDENT/DEDENT when outside parens, OR when tracking an arrow body inside parens
+        if paren_depth == 0 or arrow_indent then
           local cur = indent_stack[#indent_stack]
           if ind > cur then
             indent_stack[#indent_stack+1] = ind; emit(T.INDENT, ind)
           elseif ind < cur then
             while #indent_stack > 1 and indent_stack[#indent_stack] > ind do
               indent_stack[#indent_stack] = nil; emit(T.DEDENT, ind)
+            end
+            -- Once we dedent back to the arrow's call level, stop arrow mode
+            if arrow_indent and paren_depth > 0 and ind <= arrow_indent then
+              arrow_indent = false
             end
           end
         end
@@ -190,7 +196,10 @@ function Breeze.lex(source, filename)
       local c = char()
       if c == " " or c == "\t" or c == "\r" then advance()
       elseif c == "\n" then
-        if paren_depth == 0 and #tokens > 0 and tokens[#tokens].type ~= T.NEWLINE and tokens[#tokens].type ~= T.INDENT then
+        local last_type = #tokens > 0 and tokens[#tokens].type or nil
+        local after_arrow = (last_type == T.ARROW or last_type == T.FATARROW)
+        if after_arrow then arrow_indent = indent_stack[#indent_stack] end
+        if (paren_depth == 0 or arrow_indent) and #tokens > 0 and last_type ~= T.NEWLINE and last_type ~= T.INDENT then
           emit(T.NEWLINE, "\n")
         end
         advance(); at_line_start = true

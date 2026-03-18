@@ -54,9 +54,41 @@ lua breeze.lua -c my_scan.bz > my_scan.nse
 
 Many game engines embed Lua for modding and scripting (LOVE2D, Corona/Solar2D, Defold, WoW addons, Roblox, etc.). Use Breeze for a more expressive scripting experience, then compile to Lua for the target engine.
 
-### Embedded Systems & IoT
+### Embedded Systems & IoT (ESP32 / NodeMCU)
 
-Lua is widely used in embedded contexts (OpenWrt, NodeMCU/ESP8266, Redis scripting). Breeze lets you write more maintainable configuration and automation scripts that compile down to standard Lua.
+The [NodeMCU](https://nodemcu.readthedocs.io/) firmware runs Lua 5.1 on ESP32 and ESP8266 microcontrollers. Breeze makes embedded code dramatically more readable — arrow functions replace verbose `function()...end` callbacks, and indentation-based blocks eliminate boilerplate.
+
+```coffee
+# ESP32 LED Blink with WiFi — compile and upload as init.lua
+LED_PIN = 2
+
+gpio.config({gpio: LED_PIN, dir: gpio.OUT})
+led_state = false
+
+blink_timer = tmr.create()
+blink_timer:alarm(500, tmr.ALARM_REP, ->
+  led_state = not led_state
+  if led_state
+    gpio.write(LED_PIN, 1)
+  else
+    gpio.write(LED_PIN, 0)
+)
+
+wifi.mode(wifi.STATION, true)
+wifi.sta.config({ssid: "MyNetwork", pwd: "MyPassword", auto: true})
+
+wifi.sta.on("got_ip", (name, info) ->
+  print("WiFi connected! IP: #{info.ip}")
+)
+```
+
+```bash
+# Compile and upload to ESP32
+lua breeze.lua -c examples/esp32_blink.bz > init.lua
+# Flash init.lua to the device using ESPlorer or nodemcu-tool
+```
+
+See [`examples/esp32_blink.bz`](examples/esp32_blink.bz) for the full example.
 
 ## Quick Start
 
