@@ -274,6 +274,14 @@ function Breeze.lex(source, filename)
   end
 
   while #indent_stack > 1 do indent_stack[#indent_stack] = nil; emit(T.DEDENT, 0) end
+
+  -- Check for unmatched delimiters
+  if paren_depth > 0 then
+    error(filename..":"..line..":1: unmatched opening delimiter (missing closing paren, bracket, or brace)")
+  elseif paren_depth < 0 then
+    error(filename..":"..line..":1: extra closing delimiter (unexpected closing paren, bracket, or brace)")
+  end
+
   emit(T.EOF, "")
   return tokens
 end
@@ -539,8 +547,8 @@ function Breeze.parse(tokens, filename)
     while true do
       local p = get_prec()
       if not p or p < min then break end
-      local op = adv().value or adv().type
-      -- oops, already advanced, use previous logic
+      local tok = adv()
+      local op = tok.value or tok.type
       skip_nl()
       local right = parse_binop(right_assoc[op] and p or (p+1))
       left = N("Binop", {op=op, left=left, right=right})
