@@ -15,6 +15,12 @@ A CoffeeScript-inspired language that compiles to Lua 5.1. Breeze adds modern sy
 - **Switch/when** expressions
 - **Try/catch/finally** error handling
 - **Existential operator** (`?`) for nil checking
+- **Safe navigation** (`?.`) — `user?.profile?.city` (nil-safe chaining)
+- **Default operator** (`??`) — `x ?? "fallback"` (preserves `false`, unlike `or`)
+- **Pipeline operator** (`|>`) — `data |> parse() |> validate()` (left-to-right chaining)
+- **Range literals** — `for i in 1..10`, `1..<5`, `0..100 by 2`
+- **Multi-line strings** — `"""..."""` with interpolation, `'''...'''` raw
+- **Shorthand properties** — `{ name, age }` expands to `{ name: name, age: age }`
 - **Unless/until** — negated `if`/`while`
 - **Postfix conditionals** — `return x if valid`
 - **Compound assignment** — `+=`, `-=`, `*=`, `/=`, `..=`, `%=`
@@ -203,6 +209,11 @@ See [`examples/wireshark_dissectors/modbus_tcp.bz`](examples/wireshark_dissector
 | `items = [1, 2, 3]` | `local items = {1, 2, 3}` |
 | `for item in items` | `for _, item in ipairs(items) do ... end` |
 | `@name = name` | `self.name = name` |
+| `data \|> f() \|> g()` | `g(f(data))` |
+| `user?.name ?? "anon"` | nil-safe access with default |
+| `for i in 1..5` | `for i = 1, 5 do ... end` |
+| `"""multi-line"""` | triple-quoted string |
+| `{ name, age }` | `{name = name, age = age}` |
 
 ## Editor Support
 

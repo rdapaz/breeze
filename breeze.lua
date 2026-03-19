@@ -17,6 +17,8 @@ local T = {
   SLASHEQ = "/=", CONCATEQ = "..=", PERCENTEQ = "%=",
   AND = "and", OR = "or", NOT = "not",
   DOT = ".", COLON = ":", HASH = "#", AT = "@", QMARK = "?",
+  QDOT = "?.", QBRACKET = "?[", DQMARK = "??", PIPE = "|>",
+  RANGE_EXCL = "..<", BY = "by",
   LPAREN = "(", RPAREN = ")", LBRACKET = "[", RBRACKET = "]",
   LBRACE = "{", RBRACE = "}", COMMA = ",",
   ARROW = "->", FATARROW = "=>",
@@ -41,7 +43,7 @@ local KEYWORDS = {
   ["true"]=T.BOOL, ["false"]=T.BOOL, ["nil"]=T.NIL,
   ["do"]=T.DO, ["switch"]=T.SWITCH, ["when"]=T.WHEN,
   ["try"]=T.TRY, ["catch"]=T.CATCH, ["finally"]=T.FINALLY,
-  ["then"]=T.THEN, ["typeof"]=T.TYPEOF,
+  ["then"]=T.THEN, ["typeof"]=T.TYPEOF, ["by"]=T.BY,
 }
 
 --------------------------------------------------------------------------------
@@ -124,6 +126,116 @@ function Breeze.lex(source, filename)
     else
       if #buf > 0 then parts[#parts+1] = {type="str", value=table.concat(buf)} end
       emit(T.STRING, parts)
+    end
+  end
+
+  -- Dedent a multi-line string: strip common leading whitespace
+  local function dedent_string(s)
+    s = s:gsub("[\n\r][ \t]*$", "")
+    local min_indent = math.huge
+    for line_content in s:gmatch("[^\n]+") do
+      local ws = line_content:match("^([ \t]*)")
+      if #line_content > #ws then min_indent = math.min(min_indent, #ws) end
+    end
+    if min_indent == math.huge or min_indent == 0 then return s end
+    local lines = {}
+    for line_content in (s.."\n"):gmatch("(.-)\n") do
+      if #line_content >= min_indent then lines[#lines+1] = line_content:sub(min_indent + 1)
+      else lines[#lines+1] = line_content end
+    end
+    if lines[#lines] == "" then lines[#lines] = nil end
+    return table.concat(lines, "\n")
+  end
+
+  local function dedent_interp_parts(parts)
+    -- Reconstruct full text with placeholders to compute indent
+    local full = {}
+    for _, p in ipairs(parts) do
+      if p.type == "str" then full[#full+1] = p.value
+      else full[#full+1] = "\0INTERP\0" end
+    end
+    local joined = table.concat(full)
+    joined = joined:gsub("[\n\r][ \t]*$", "")
+    local min_indent = math.huge
+    for line_content in joined:gmatch("[^\n]+") do
+      local ws = line_content:match("^([ \t]*)")
+      if not line_content:match("^[ \t]*\0") and #line_content > #ws then
+        min_indent = math.min(min_indent, #ws)
+      end
+    end
+    if min_indent == math.huge or min_indent == 0 then return parts end
+    local result = {}
+    for _, p in ipairs(parts) do
+      if p.type == "str" then
+        local lines = {}
+        for line_content in (p.value.."\n"):gmatch("(.-)\n") do
+          if #line_content >= min_indent then lines[#lines+1] = line_content:sub(min_indent + 1)
+          else lines[#lines+1] = line_content end
+        end
+        if lines[#lines] == "" then lines[#lines] = nil end
+        result[#result+1] = {type="str", value=table.concat(lines, "\n")}
+      else
+        result[#result+1] = p
+      end
+    end
+    return result
+  end
+
+  local function read_multiline_string(quote)
+    local sline = line
+    advance(3) -- skip opening triple quote
+    local is_interp = (quote == '"')
+
+    -- Skip first newline immediately after opening triple-quote
+    if pos <= #source and char() == "\n" then advance()
+    elseif pos <= #source and char() == "\r" then
+      advance(); if pos <= #source and char() == "\n" then advance() end
+    end
+
+    local parts, buf = {}, {}
+    while pos <= #source do
+      if char() == quote and char(1) == quote and char(2) == quote then
+        advance(3); break
+      end
+      if is_interp and char() == "\\" then
+        advance()
+        local c = char()
+        if c == "n" then buf[#buf+1] = "\n"
+        elseif c == "t" then buf[#buf+1] = "\t"
+        elseif c == "r" then buf[#buf+1] = "\r"
+        elseif c == "\\" then buf[#buf+1] = "\\"
+        elseif c == "#" then buf[#buf+1] = "#"
+        else buf[#buf+1] = "\\"..c end
+        advance()
+      elseif is_interp and char() == "#" and char(1) == "{" then
+        if #buf > 0 or #parts == 0 then
+          parts[#parts+1] = {type="str", value=table.concat(buf)}; buf = {}
+        end
+        advance(2)
+        local depth, ec = 1, {}
+        while pos <= #source and depth > 0 do
+          if char() == "{" then depth = depth + 1
+          elseif char() == "}" then depth = depth - 1 end
+          if depth > 0 then ec[#ec+1] = char(); advance() end
+        end
+        advance()
+        parts[#parts+1] = {type="expr", value=table.concat(ec)}
+      else
+        buf[#buf+1] = char(); advance()
+      end
+    end
+
+    if #parts == 0 then
+      local raw = table.concat(buf)
+      emit(T.STRING, dedent_string(raw))
+    else
+      if #buf > 0 then parts[#parts+1] = {type="str", value=table.concat(buf)} end
+      parts = dedent_interp_parts(parts)
+      if #parts == 1 and parts[1].type == "str" then
+        emit(T.STRING, parts[1].value)
+      else
+        emit(T.STRING, parts)
+      end
     end
   end
 
@@ -222,7 +334,8 @@ function Breeze.lex(source, filename)
             [T.EQ]=1, [T.NEQ]=1, [T.LT]=1, [T.GT]=1, [T.LTE]=1, [T.GTE]=1,
             [T.AND]=1, [T.OR]=1, [T.NOT]=1,
             [T.RETURN]=1, [T.LBRACE]=1, [T.COLON]=1,
-            [T.ARROW]=1, [T.FATARROW]=1,
+            [T.ARROW]=1, [T.FATARROW]=1, [T.PIPE]=1, [T.DQMARK]=1,
+            [T.RANGE_EXCL]=1,
             [T.INDENT]=1, [T.NEWLINE]=1,
             [T.IF]=1, [T.UNLESS]=1, [T.WHILE]=1, [T.UNTIL]=1,
             [T.ELSEIF]=1, [T.THEN]=1, [T.ELSE]=1,
@@ -239,7 +352,8 @@ function Breeze.lex(source, filename)
           skip_comment()
         end
       elseif c:match("%d") or (c == "." and char(1):match("%d")) then read_number()
-      elseif c == '"' or c == "'" then read_string(c)
+      elseif c == '"' or c == "'" then
+        if char(1) == c and char(2) == c then read_multiline_string(c) else read_string(c) end
       elseif c:match("[%a_]") then read_ident()
       elseif c == "+" then advance(); if char() == "=" then advance(); emit(T.PLUSEQ,"+=") else emit(T.PLUS,"+") end
       elseif c == "-" then advance(); if char() == ">" then advance(); emit(T.ARROW,"->") elseif char() == "=" then advance(); emit(T.MINUSEQ,"-=") else emit(T.MINUS,"-") end
@@ -253,6 +367,7 @@ function Breeze.lex(source, filename)
           advance()
           if char() == "." then advance(); emit(T.VARARGS,"...")
           elseif char() == "=" then advance(); emit(T.CONCATEQ,"..=")
+          elseif char() == "<" then advance(); emit(T.RANGE_EXCL, "..<")
           else emit(T.CONCAT,"..") end
         else emit(T.DOT,".") end
       elseif c == "=" then advance(); if char() == "=" then advance(); emit(T.EQ,"==") elseif char() == ">" then advance(); emit(T.FATARROW,"=>") else emit(T.ASSIGN,"=") end
@@ -268,7 +383,16 @@ function Breeze.lex(source, filename)
       elseif c == "," then advance(); emit(T.COMMA,",")
       elseif c == ":" then advance(); emit(T.COLON,":")
       elseif c == "@" then advance(); emit(T.AT,"@")
-      elseif c == "?" then advance(); emit(T.QMARK,"?")
+      elseif c == "?" then
+        advance()
+        if char() == "." then advance(); emit(T.QDOT, "?.")
+        elseif char() == "[" then paren_depth=paren_depth+1; advance(); emit(T.QBRACKET, "?[")
+        elseif char() == "?" then advance(); emit(T.DQMARK, "??")
+        else emit(T.QMARK, "?") end
+      elseif c == "|" then
+        advance()
+        if char() == ">" then advance(); emit(T.PIPE, "|>")
+        else err("unexpected character: |") end
       else err("unexpected character: "..c) end
     end
   end
@@ -343,6 +467,9 @@ function Breeze.parse(tokens, filename)
 
   local parse_postfix  -- forward declaration for use in parse_primary
 
+  -- Context flag: when true, `..` between expressions is treated as range, not concat
+  local in_range_context = false
+
   -- Table literal { key: val }
   local function parse_table()
     expect(T.LBRACE); skip_nl()
@@ -352,6 +479,9 @@ function Breeze.parse(tokens, filename)
       if is(T.IDENT) and pk(1).type == T.COLON then
         local k = adv().value; adv(); skip_nl()
         entries[#entries+1] = N("Entry", {key=N("Str",{value=k}), value=parse_expr()})
+      elseif is(T.IDENT) and (pk(1).type == T.COMMA or pk(1).type == T.RBRACE or pk(1).type == T.NEWLINE) then
+        local k = adv().value
+        entries[#entries+1] = N("Entry", {key=N("Str",{value=k}), value=N("Id",{name=k})})
       elseif is(T.LBRACKET) then
         adv(); local k = parse_expr(); expect(T.RBRACKET); expect(T.COLON); skip_nl()
         entries[#entries+1] = N("Entry", {key=k, value=parse_expr()})
@@ -379,7 +509,7 @@ function Breeze.parse(tokens, filename)
       local v2 = nil
       if try_match(T.COMMA) then v2 = expect(T.IDENT).value end
       expect(T.IN); skip_nl()
-      local iter = parse_expr_no_postfix()
+      in_range_context = true; local iter = parse_expr_no_postfix(); in_range_context = false
       skip_nl()
       local guard = nil
       if is(T.IF) or is(T.WHEN) then adv(); guard = parse_expr_no_postfix() end
@@ -534,6 +664,23 @@ function Breeze.parse(tokens, filename)
       elseif is(T.LBRACKET) and not is(T.NEWLINE) then
         adv(); skip_nl(); local idx = parse_expr(); skip_nl(); expect(T.RBRACKET)
         expr = N("Idx", {obj=expr, index=idx})
+      elseif is(T.QDOT) then
+        adv()
+        local field = expect(T.IDENT).value
+        if is(T.LPAREN) then
+          adv(); skip_nl(); local args = {}
+          while not is(T.RPAREN) and not is(T.EOF) do
+            args[#args+1] = parse_expr(); skip_nl()
+            if not try_match(T.COMMA) then break end; skip_nl()
+          end
+          expect(T.RPAREN)
+          expr = N("SafeMethodCall", {obj=expr, method=field, args=args})
+        else
+          expr = N("SafeDot", {obj=expr, field=field})
+        end
+      elseif is(T.QBRACKET) then
+        adv(); skip_nl(); local idx = parse_expr(); skip_nl(); expect(T.RBRACKET)
+        expr = N("SafeIdx", {obj=expr, index=idx})
       elseif is(T.QMARK) then
         adv(); expr = N("Exist", {expr=expr})
       else break end
@@ -542,16 +689,21 @@ function Breeze.parse(tokens, filename)
   end
 
   local binop_prec = {
-    ["or"]=1, ["and"]=2,
-    ["=="]=3, ["!="]=3, ["<"]=3, [">"]=3, ["<="]=3, [">="]=3,
-    [".."]=4, ["+"]=5, ["-"]=5, ["*"]=6, ["/"]=6, ["%"]=6, ["^"]=7,
+    ["|>"]=0,
+    ["or"]=1, ["??"]=2, ["and"]=3,
+    ["=="]=4, ["!="]=4, ["<"]=4, [">"]=4, ["<="]=4, [">="]=4,
+    [".."]=5, ["..<"]=5, ["+"]=6, ["-"]=6, ["*"]=7, ["/"]=7, ["%"]=7, ["^"]=8,
   }
   local right_assoc = {["^"]=true, [".."]=true}
 
   local function get_prec()
     local t = cur()
-    if t.type == T.AND then return 2 end
+    if t.type == T.AND then return 3 end
     if t.type == T.OR then return 1 end
+    if t.type == T.DQMARK then return 2 end
+    if t.type == T.PIPE then return 0 end
+    if t.type == T.RANGE_EXCL then return 5 end
+    if t.type == T.BY then return nil end
     return binop_prec[t.type] or binop_prec[t.value]
   end
 
@@ -560,23 +712,50 @@ function Breeze.parse(tokens, filename)
     while true do
       local p = get_prec()
       if not p or p < min then break end
-      local tok = adv()
-      local op = tok.value or tok.type
-      skip_nl()
-      local right = parse_binop(right_assoc[op] and p or (p+1))
-      left = N("Binop", {op=op, left=left, right=right})
+
+      -- Pipeline operator: transform into Call nodes at parse time
+      if cur().type == T.PIPE then
+        adv(); skip_nl()
+        local right = parse_binop(p + 1)
+        if right.tag == "Call" then
+          table.insert(right.args, 1, left)
+          left = right
+        elseif right.tag == "MethodCall" then
+          table.insert(right.args, 1, left)
+          left = right
+        elseif right.tag == "Id" or right.tag == "Dot" or right.tag == "Idx" then
+          left = N("Call", {fn=right, args={left}})
+        else
+          local t = cur()
+          error(filename..":"..t.line..":"..t.col..": pipeline operator requires a function or call on the right side")
+        end
+      -- Range operators
+      elseif cur().type == T.RANGE_EXCL or (cur().type == T.CONCAT and in_range_context) then
+        local exclusive = (cur().type == T.RANGE_EXCL)
+        adv(); skip_nl()
+        local right = parse_binop(p + 1)
+        local step = nil
+        if is(T.BY) then adv(); skip_nl(); step = parse_binop(p + 1) end
+        left = N("Range", {start=left, stop=right, step=step, exclusive=exclusive})
+      else
+        local tok = adv()
+        local op = tok.value or tok.type
+        skip_nl()
+        local right = parse_binop(right_assoc[op] and p or (p+1))
+        left = N("Binop", {op=op, left=left, right=right})
+      end
     end
     return left
   end
 
   -- Expression without postfix if/unless (used inside array literals, comprehensions, params)
   parse_expr_no_postfix = function()
-    return parse_binop(1)
+    return parse_binop(0)
   end
 
   -- Full expression (may have postfix if/unless)
   parse_expr = function()
-    local e = parse_binop(1)
+    local e = parse_binop(0)
     if is(T.IF) then adv(); return N("PostIf", {expr=e, cond=parse_expr()}) end
     if is(T.UNLESS) then adv(); return N("PostUnless", {expr=e, cond=parse_expr()}) end
     return e
@@ -617,7 +796,9 @@ function Breeze.parse(tokens, filename)
     if try_match(T.COMMA) then v2 = expect(T.IDENT).value end
 
     if try_match(T.IN) then
-      skip_nl(); local iter = parse_expr(); skip_nl()
+      skip_nl()
+      in_range_context = true; local iter = parse_expr(); in_range_context = false
+      skip_nl()
       return N("ForIn", {v1=v1, v2=v2, iter=iter, body=parse_block()})
     elseif try_match(T.OF) then
       skip_nl(); local iter = parse_expr(); skip_nl()
@@ -802,6 +983,28 @@ function Breeze.compile(ast, opts)
     return false
   end
 
+  -- Safe navigation temp variable counter and ?? helper flag
+  local sn_count = 0
+  local function new_sn() sn_count = sn_count + 1; return "_sn" .. sn_count end
+  local needs_nn = false
+
+  -- Collect chained safe-nav into {base, steps} for flattened IIFE
+  local function collect_safe_chain(node)
+    local steps = {}
+    local cur = node
+    while cur.tag == "SafeDot" or cur.tag == "SafeIdx" or cur.tag == "SafeMethodCall" do
+      if cur.tag == "SafeDot" then
+        table.insert(steps, 1, {type="dot", field=cur.field})
+      elseif cur.tag == "SafeIdx" then
+        table.insert(steps, 1, {type="idx", index=cur.index})
+      elseif cur.tag == "SafeMethodCall" then
+        table.insert(steps, 1, {type="mcall", method=cur.method, args=cur.args})
+      end
+      cur = cur.obj
+    end
+    return cur, steps
+  end
+
   local function w(s) out[#out+1] = s end
   local function ind() for i=1,lvl do w(tab) end end
   local function ln(s) ind(); w(s); w("\n") end
@@ -838,6 +1041,10 @@ function Breeze.compile(ast, opts)
     end
     if t == "Binop" then
       local op = n.op
+      if op == "??" then
+        needs_nn = true
+        return "_nn(" .. ce(n.left) .. ", " .. ce(n.right) .. ")"
+      end
       if op == "!=" then op = "~=" end
       return "("..ce(n.left).." "..op.." "..ce(n.right)..")"
     end
@@ -853,6 +1060,43 @@ function Breeze.compile(ast, opts)
     end
     if t == "Idx" then return ce(n.obj).."["..ce(n.index).."]" end
     if t == "Exist" then return "("..ce(n.expr).." ~= nil)" end
+    if t == "SafeDot" or t == "SafeIdx" or t == "SafeMethodCall" then
+      local base, steps = collect_safe_chain(n)
+      local tmp = new_sn()
+      local pad = tab:rep(lvl+1)
+      local r = "(function()\n"
+      r = r .. pad .. "local " .. tmp .. " = " .. ce(base) .. "\n"
+      for _, step in ipairs(steps) do
+        r = r .. pad .. "if " .. tmp .. " == nil then return nil end\n"
+        if step.type == "dot" then
+          r = r .. pad .. tmp .. " = " .. tmp .. "." .. step.field .. "\n"
+        elseif step.type == "idx" then
+          r = r .. pad .. tmp .. " = " .. tmp .. "[" .. ce(step.index) .. "]\n"
+        elseif step.type == "mcall" then
+          local a = {}; for _, v in ipairs(step.args) do a[#a+1] = ce(v) end
+          r = r .. pad .. tmp .. " = " .. tmp .. ":" .. step.method .. "(" .. table.concat(a, ", ") .. ")\n"
+        end
+      end
+      r = r .. pad .. "return " .. tmp .. "\n"
+      r = r .. tab:rep(lvl) .. "end)()"
+      return r
+    end
+    if t == "Range" then
+      local start_e = ce(n.start)
+      local stop_e = n.exclusive and ("(" .. ce(n.stop) .. " - 1)") or ce(n.stop)
+      local step_e = n.step and ce(n.step) or nil
+      local pad = tab:rep(lvl+1)
+      local r = "(function()\n"
+      r = r .. pad .. "local _r = {}\n"
+      r = r .. pad .. "for _i = " .. start_e .. ", " .. stop_e
+      if step_e then r = r .. ", " .. step_e end
+      r = r .. " do\n"
+      r = r .. pad .. tab .. "_r[#_r + 1] = _i\n"
+      r = r .. pad .. "end\n"
+      r = r .. pad .. "return _r\n"
+      r = r .. tab:rep(lvl) .. "end)()"
+      return r
+    end
     if t == "New" then
       local a = {}; for _,v in ipairs(n.args) do a[#a+1] = ce(v) end
       return ce(n.class)..":new("..table.concat(a,", ")..")"
@@ -883,7 +1127,11 @@ function Breeze.compile(ast, opts)
     if t == "ListComp" then
       local r = "(function()\n"
       r = r .. tab.."local _r = {}\n"
-      if n.var2 then
+      if n.iter.tag == "Range" then
+        local stop_e = n.iter.exclusive and ("(" .. ce(n.iter.stop) .. " - 1)") or ce(n.iter.stop)
+        local step_part = n.iter.step and (", " .. ce(n.iter.step)) or ""
+        r = r .. tab.."for " .. n.var1 .. " = " .. ce(n.iter.start) .. ", " .. stop_e .. step_part .. " do\n"
+      elseif n.var2 then
         r = r .. tab.."for "..n.var1..", "..n.var2.." in ipairs("..ce(n.iter)..") do\n"
       else
         r = r .. tab.."for _, "..n.var1.." in ipairs("..ce(n.iter)..") do\n"
@@ -1022,7 +1270,11 @@ function Breeze.compile(ast, opts)
       ln("while "..cond.." do")
       lvl=lvl+1; cb(n.body); lvl=lvl-1; ln("end")
     elseif t == "ForIn" then
-      if n.v2 then ln("for "..n.v1..", "..n.v2.." in ipairs("..ce(n.iter)..") do")
+      if n.iter.tag == "Range" then
+        local stop_e = n.iter.exclusive and ("(" .. ce(n.iter.stop) .. " - 1)") or ce(n.iter.stop)
+        local step_part = n.iter.step and (", " .. ce(n.iter.step)) or ""
+        ln("for " .. n.v1 .. " = " .. ce(n.iter.start) .. ", " .. stop_e .. step_part .. " do")
+      elseif n.v2 then ln("for "..n.v1..", "..n.v2.." in ipairs("..ce(n.iter)..") do")
       else ln("for _, "..n.v1.." in ipairs("..ce(n.iter)..") do") end
       lvl=lvl+1
       push_scope(); declare(n.v1); if n.v2 then declare(n.v2) end
@@ -1222,7 +1474,11 @@ function Breeze.compile(ast, opts)
     ln("return {"..table.concat(ps, ", ").."}")
   end
 
-  return table.concat(out)
+  local result = table.concat(out)
+  if needs_nn then
+    result = "local function _nn(a, b) if a ~= nil then return a end return b end\n" .. result
+  end
+  return result
 end
 
 --------------------------------------------------------------------------------
@@ -1267,9 +1523,15 @@ Language features:
   - Fat arrows: (x) => @value + x  (binds self)
   - Implicit returns (last expression in a function)
   - String interpolation: "hello #{name}"
+  - Multi-line strings: """...""" and '''...'''
   - @ shorthand for self: @name = value
   - Classes with inheritance: class Dog extends Animal
   - List comprehensions: [x * 2 for x in items]
+  - Pipeline operator: data |> transform() |> output()
+  - Safe navigation: user?.profile?.city
+  - Default operator: value ?? "fallback"
+  - Range literals: for i in 1..10, 1..<5, 0..100 by 2
+  - Shorthand properties: { name, age }
   - unless/until keywords
   - Postfix conditionals: print(x) if x > 0
   - Existential operator: value?
@@ -1297,7 +1559,7 @@ Language features:
     if print_lua then print(Breeze.transpile(src, input_file))
     else Breeze.run(src, input_file) end
   elseif not mode then
-    io.write("Breeze v0.1.0 (Lua 5.1 target)\nType expressions or statements. Ctrl+D to exit.\n\n")
+    io.write("Breeze v0.5.0 (Lua 5.1 target)\nType expressions or statements. Ctrl+D to exit.\n\n")
     local buf = ""
     while true do
       io.write(buf == "" and "breeze> " or "     .. ")

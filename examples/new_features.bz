@@ -1,0 +1,118 @@
+# Test all new language features
+
+# === 1. Multi-line strings ===
+html = """
+  <div>
+    <p>Hello</p>
+  </div>
+"""
+print("=== Multi-line strings ===")
+print(html)
+
+# Triple-quoted with interpolation
+name = "World"
+greeting = """
+  Hello #{name}!
+  Welcome to Breeze.
+"""
+print(greeting)
+
+# Raw triple-single-quoted (no interpolation)
+raw = '''
+  This #{is} raw
+  No interpolation here
+'''
+print(raw)
+
+# === 2. Terse property definitions ===
+print("=== Terse properties ===")
+x = 10
+y = 20
+point = { x, y, label: "origin" }
+print("x=#{point.x}, y=#{point.y}, label=#{point.label}")
+
+# === 3. Pipeline operator ===
+print("=== Pipeline ===")
+double = (n) -> n * 2
+add_one = (n) -> n + 1
+to_str = (n) -> "result: #{n}"
+
+output = 5 |> double() |> add_one() |> to_str()
+print(output)
+
+# Pipeline with extra args
+add = (a, b) -> a + b
+result = 10 |> add(5)
+print("10 + 5 = #{result}")
+
+# === 4. Safe navigation ===
+print("=== Safe navigation ===")
+user = { profile: { address: { city: "Melbourne" } } }
+city = user?.profile?.address?.city
+print("city: #{city}")
+
+nobody = nil
+missing = nobody?.profile?.address?.city
+print("missing: #{missing}")
+
+# Safe indexing
+items = { tags: { "lua", "breeze", "cool" } }
+first = items?.tags?[1]
+print("first tag: #{first}")
+empty = nil
+no_tag = empty?.tags?[1]
+print("no tag: #{no_tag}")
+
+# === 5. Default operator ===
+print("=== Default operator ===")
+val = nil
+fallback = val ?? "default"
+print("nil ?? default = #{fallback}")
+
+# false is NOT nil, should keep false
+flag = false
+kept = flag ?? true
+print("false ?? true = #{kept}")
+
+# Chained
+a = nil
+b = nil
+c = "found"
+result = a ?? b ?? c
+print("nil ?? nil ?? found = #{result}")
+
+# Combined with safe nav
+config = nil
+setting = config?.theme?.color ?? "blue"
+print("config?.theme?.color ?? blue = #{setting}")
+
+# === 6. Range literals ===
+print("=== Ranges ===")
+
+# Range in for..in
+for i in 1..5
+  print("range: #{i}")
+
+# Exclusive range
+print("exclusive:")
+for i in 1..<5
+  print("  #{i}")
+
+# Range with step
+print("step:")
+for i in 0..10 by 3
+  print("  #{i}")
+
+# Range in list comprehension
+squares = [i * i for i in 1..5]
+print("squares:")
+for s in squares
+  print("  #{s}")
+
+# Exclusive range in comprehension
+evens = [i for i in 0..<10 by 2]
+print("evens: ")
+for e in evens
+  print("  #{e}")
+
+print("=== All new features work! ===")

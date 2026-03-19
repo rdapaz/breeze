@@ -23,6 +23,10 @@ string interpolation, and many syntactic conveniences.
 - [Switch / When](#switch--when)
 - [Try / Catch / Finally](#try--catch--finally)
 - [Modules](#modules)
+- [Pipeline Operator](#pipeline-operator)
+- [Safe Navigation](#safe-navigation)
+- [Default Operator](#default-operator)
+- [Range Literals](#range-literals)
 - [Miscellaneous](#miscellaneous)
 - [CLI Usage](#cli-usage)
 
@@ -84,6 +88,33 @@ literal = 'no #{interpolation} here'  # stays as-is
 ```
 
 Escape sequences work in both: `\n`, `\t`, `\r`, `\\`, `\"`, `\'`.
+
+### Multi-line Strings
+
+Triple-quoted strings support multi-line content with automatic dedenting.
+
+**Double triple-quotes** (`"""..."""`) support interpolation:
+
+```coffee
+html = """
+  <div class="greeting">
+    <h1>Hello #{name}!</h1>
+    <p>Welcome to Breeze.</p>
+  </div>
+"""
+```
+
+**Single triple-quotes** (`'''...'''`) are raw — no interpolation or escape processing:
+
+```coffee
+template = '''
+  This #{is} raw text.
+  No interpolation here.
+  Backslashes are literal: \n \t
+'''
+```
+
+Common leading whitespace is automatically stripped based on the least-indented line, so the content aligns naturally in your source code without extra indentation in the output.
 
 ---
 
@@ -330,7 +361,20 @@ person = {name: "Alice", age: 30}
 point = {x: 10, y: 20}
 ```
 
-Computed keys:
+### Shorthand Properties
+
+When a key name matches a variable name, use the shorthand form:
+
+```coffee
+name = "Alice"
+age = 30
+person = { name, age, active: true }
+# => {name: "Alice", age: 30, active: true}
+```
+
+This is equivalent to `{ name: name, age: age, active: true }`.
+
+### Computed Keys
 
 ```coffee
 key = "color"
@@ -494,6 +538,177 @@ export class Vector
 ```
 
 Exported names are collected into a return table at the end of the file.
+
+---
+
+## Pipeline Operator
+
+The pipeline operator `|>` passes the left-hand value as the first argument to the right-hand function. This enables readable left-to-right data transformation chains.
+
+```coffee
+double = (x) -> x * 2
+add_one = (x) -> x + 1
+
+# Instead of nested calls:
+result = add_one(double(5))
+
+# Use pipeline:
+result = 5 |> double() |> add_one()
+# => 11
+```
+
+When the right-hand function takes additional arguments, the piped value is prepended:
+
+```coffee
+add = (a, b) -> a + b
+result = 10 |> add(5)
+# => add(10, 5) => 15
+```
+
+A bare function name (without parentheses) is also valid:
+
+```coffee
+result = data |> process
+# => process(data)
+```
+
+The pipeline operator has the lowest precedence, so arithmetic and comparisons bind tighter:
+
+```coffee
+result = 1 + 2 |> double()
+# => double(3) => 6
+```
+
+---
+
+## Safe Navigation
+
+The safe navigation operator `?.` short-circuits to `nil` when the left-hand side is `nil`, avoiding "attempt to index nil" errors.
+
+### Property Access
+
+```coffee
+user = { profile: { address: { city: "Melbourne" } } }
+
+city = user?.profile?.address?.city
+# => "Melbourne"
+
+nobody = nil
+city = nobody?.profile?.address?.city
+# => nil (no error)
+```
+
+### Safe Indexing
+
+Use `?[` for safe bracket access:
+
+```coffee
+items = { tags: ["lua", "breeze"] }
+first = items?.tags?[1]     # => "lua"
+
+empty = nil
+val = empty?.tags?[1]       # => nil
+```
+
+### Safe Method Calls
+
+```coffee
+obj?.method(args)
+# If obj is nil, returns nil instead of erroring
+```
+
+### Combined with Default Operator
+
+```coffee
+theme = config?.ui?.theme ?? "dark"
+# If any part of the chain is nil, falls back to "dark"
+```
+
+---
+
+## Default Operator
+
+The `??` operator returns the right-hand side only when the left is `nil`. Unlike `or`, it preserves `false` values.
+
+```coffee
+name = nil
+display = name ?? "Anonymous"    # => "Anonymous"
+
+flag = false
+val = flag ?? true               # => false (preserved!)
+val = flag or true               # => true  (lost!)
+```
+
+Chain multiple defaults:
+
+```coffee
+a = nil
+b = nil
+c = "found"
+result = a ?? b ?? c             # => "found"
+```
+
+---
+
+## Range Literals
+
+Ranges generate sequences of numbers. They are most commonly used in `for..in` loops and list comprehensions.
+
+### Inclusive Range (`..`)
+
+In a `for..in` loop, `..` creates an inclusive range:
+
+```coffee
+for i in 1..5
+  print(i)
+# => 1, 2, 3, 4, 5
+```
+
+### Exclusive Range (`..<`)
+
+The `..<` operator excludes the upper bound:
+
+```coffee
+for i in 1..<5
+  print(i)
+# => 1, 2, 3, 4
+```
+
+### Step Values (`by`)
+
+Add `by` to specify a step:
+
+```coffee
+for i in 0..10 by 3
+  print(i)
+# => 0, 3, 6, 9
+
+for i in 10..1 by -1
+  print(i)
+# => 10, 9, 8, ..., 1
+```
+
+### In List Comprehensions
+
+Ranges work naturally in comprehensions:
+
+```coffee
+squares = [i * i for i in 1..10]
+evens = [i for i in 0..<20 by 2]
+```
+
+### Standalone Ranges
+
+Use `..<` for standalone range expressions (outside loops):
+
+```coffee
+digits = 0..<10
+# => {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+```
+
+> **Note:** Inside `for..in` and list comprehensions, `..` is always treated as a range.
+> In other contexts, `..` remains the string concatenation operator.
+> Use `..<` when you need an unambiguous range expression outside of loops.
 
 ---
 
@@ -696,7 +911,14 @@ breeze -h                     Show help
 | `value?`                       | `(value ~= nil)`                                  |
 | `class Dog extends Animal`    | metatable + `__index` chain                       |
 | `super(args)`                  | `Parent.method(self, args)`                       |
+| `data \|> f() \|> g()`        | `g(f(data))`                                       |
+| `obj?.prop`                    | nil-safe property access                           |
+| `x ?? y`                      | `if x ~= nil then x else y` (preserves `false`)   |
+| `for i in 1..5`               | `for i = 1, 5 do`                                  |
+| `for i in 1..<5`              | `for i = 1, 4 do`                                  |
+| `"""multi\nline"""`           | triple-quoted multi-line string                    |
+| `{ name, age }`               | `{name = name, age = age}`                         |
 
 ---
 
-*Breeze v0.1.0 — targeting Lua 5.1*
+*Breeze v0.5.0 — targeting Lua 5.1*

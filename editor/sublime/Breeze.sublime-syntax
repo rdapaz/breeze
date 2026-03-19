@@ -27,6 +27,14 @@ contexts:
       scope: comment.line.breeze
 
   strings:
+    # Triple double-quoted strings (with interpolation)
+    - match: '"""'
+      scope: punctuation.definition.string.begin.breeze
+      push: triple-double-quoted-string
+    # Triple single-quoted strings (raw)
+    - match: "'''"
+      scope: punctuation.definition.string.begin.breeze
+      push: triple-single-quoted-string
     # Double-quoted strings with interpolation
     - match: '"'
       scope: punctuation.definition.string.begin.breeze
@@ -55,6 +63,23 @@ contexts:
       scope: punctuation.definition.string.end.breeze
       pop: true
 
+  triple-double-quoted-string:
+    - meta_scope: string.quoted.triple.double.breeze
+    - match: '\\[nrt\\"#]'
+      scope: constant.character.escape.breeze
+    - match: '#\{'
+      scope: punctuation.section.interpolation.begin.breeze
+      push: interpolation
+    - match: '"""'
+      scope: punctuation.definition.string.end.breeze
+      pop: true
+
+  triple-single-quoted-string:
+    - meta_scope: string.quoted.triple.single.breeze
+    - match: "'''"
+      scope: punctuation.definition.string.end.breeze
+      pop: true
+
   interpolation:
     - clear_scopes: 1
     - meta_scope: meta.interpolation.breeze
@@ -73,7 +98,7 @@ contexts:
     # Control flow
     - match: '\b(if|else|elseif|unless|then)\b'
       scope: keyword.control.conditional.breeze
-    - match: '\b(for|while|until|in|of|do|break)\b'
+    - match: '\b(for|while|until|in|of|do|break|by)\b'
       scope: keyword.control.loop.breeze
     - match: '\b(switch|when)\b'
       scope: keyword.control.switch.breeze
@@ -126,6 +151,20 @@ contexts:
     # String concat
     - match: '\.\.'
       scope: keyword.operator.concat.breeze
+    # Pipeline
+    - match: '\|>'
+      scope: keyword.operator.pipeline.breeze
+    # Default (nil-coalescing)
+    - match: '\?\?'
+      scope: keyword.operator.default.breeze
+    # Safe navigation
+    - match: '\?\.'
+      scope: keyword.operator.safe-navigation.breeze
+    - match: '\?\['
+      scope: keyword.operator.safe-index.breeze
+    # Exclusive range
+    - match: '\.\.<'
+      scope: keyword.operator.range.exclusive.breeze
     # Existential
     - match: '\?'
       scope: keyword.operator.existential.breeze
