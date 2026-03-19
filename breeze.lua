@@ -24,7 +24,7 @@ local T = {
   WHILE = "while", UNTIL = "until",
   FOR = "for", IN = "in", OF = "of",
   RETURN = "return", BREAK = "break",
-  CLASS = "class", EXTENDS = "extends", NEW = "new",
+  CLASS = "class", EXTENDS = "extends", NEW = "new", SUPER = "super",
   IMPORT = "import", FROM = "from", EXPORT = "export",
   DO = "do", SWITCH = "switch", WHEN = "when",
   TRY = "try", CATCH = "catch", FINALLY = "finally",
@@ -36,7 +36,7 @@ local KEYWORDS = {
   ["if"]=T.IF, ["else"]=T.ELSE, ["elseif"]=T.ELSEIF, ["unless"]=T.UNLESS,
   ["while"]=T.WHILE, ["until"]=T.UNTIL, ["for"]=T.FOR, ["in"]=T.IN, ["of"]=T.OF,
   ["return"]=T.RETURN, ["break"]=T.BREAK, ["class"]=T.CLASS, ["extends"]=T.EXTENDS,
-  ["new"]=T.NEW, ["import"]=T.IMPORT, ["from"]=T.FROM, ["export"]=T.EXPORT,
+  ["new"]=T.NEW, ["super"]=T.SUPER, ["import"]=T.IMPORT, ["from"]=T.FROM, ["export"]=T.EXPORT,
   ["and"]=T.AND, ["or"]=T.OR, ["not"]=T.NOT,
   ["true"]=T.BOOL, ["false"]=T.BOOL, ["nil"]=T.NIL,
   ["do"]=T.DO, ["switch"]=T.SWITCH, ["when"]=T.WHEN,
@@ -481,6 +481,19 @@ function Breeze.parse(tokens, filename)
       return N("New", {class=cls, args=args})
     end
 
+    if is(T.SUPER) then
+      adv(); local args = {}
+      if try_match(T.LPAREN) then
+        skip_nl()
+        while not is(T.RPAREN) and not is(T.EOF) do
+          args[#args+1] = parse_expr(); skip_nl()
+          if not try_match(T.COMMA) then break end; skip_nl()
+        end
+        expect(T.RPAREN)
+      end
+      return N("Super", {args=args})
+    end
+
     if is(T.LBRACE) then return parse_table() end
     if is(T.LBRACKET) then return parse_array() end
 
@@ -772,6 +785,8 @@ function Breeze.compile(ast, opts)
   local lvl = 0
   local tab = opts.indent or "  "
   local exports = {}
+  -- Class context for super() calls: {parent=string, method=string}
+  local class_ctx = nil
   -- Track declared locals to avoid re-declaring
   local scopes = {{}}  -- stack of sets
 
@@ -841,6 +856,13 @@ function Breeze.compile(ast, opts)
     if t == "New" then
       local a = {}; for _,v in ipairs(n.args) do a[#a+1] = ce(v) end
       return ce(n.class)..":new("..table.concat(a,", ")..")"
+    end
+    if t == "Super" then
+      if not class_ctx or not class_ctx.parent then
+        error("super used outside of a class with a parent")
+      end
+      local a = {"self"}; for _,v in ipairs(n.args) do a[#a+1] = ce(v) end
+      return class_ctx.parent.."."..class_ctx.method.."("..table.concat(a, ", ")..")"
     end
     if t == "PostIf" then
       return "(function() if "..ce(n.cond).." then return "..ce(n.expr).." end end)()"
@@ -1032,6 +1054,8 @@ function Breeze.compile(ast, opts)
     elseif t == "Break" then ln("break")
     elseif t == "Class" then
       local nm, par = n.name, n.parent
+      local saved_class_ctx = class_ctx
+      class_ctx = {parent=par, method=nil}
       declare(nm)
       ln("local "..nm.." = {}"); ln(nm..".__index = "..nm)
       if par then ln("setmetatable("..nm..", {__index = "..par.."})") end
@@ -1070,6 +1094,7 @@ function Breeze.compile(ast, opts)
             end
             for _, s in ipairs(sa) do ln("self."..s.." = "..s) end
             if fn.body and fn.body.body then
+              class_ctx.method = m.name
               push_scope()
               if m.name == "constructor" then
                 cb(fn.body)
@@ -1082,6 +1107,7 @@ function Breeze.compile(ast, opts)
           end
         end
       end
+      class_ctx = saved_class_ctx
     elseif t == "Switch" then
       local sv = ce(n.subj)
       ln("local _sw = "..sv)

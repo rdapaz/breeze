@@ -400,13 +400,30 @@ class Dog extends Animal
     "#{@name} learned #{trick}!"
 ```
 
+### Super
+
+Use `super()` to call the parent class's version of the current method:
+
+```coffee
+class Dog extends Animal
+  constructor: (@name) =>
+    super(@name, "Woof!")     # calls Animal's constructor
+    @tricks = []
+
+  speak: =>
+    parent_says = super()     # calls Animal's speak()
+    "#{parent_says} (but LOUDER)"
+```
+
+Compiles to `ParentClass.method(self, args...)` — the standard Lua pattern for explicit parent method calls.
+
 ### Instantiation
 
 Use `new` to create instances:
 
 ```coffee
 rex = new Dog("Rex")
-print(rex:speak())          # "Rex says Woof!"
+print(rex:speak())          # "Rex says Woof! (but LOUDER)"
 print(rex:learn("sit"))     # "Rex learned sit!"
 ```
 
@@ -414,6 +431,7 @@ print(rex:learn("sit"))     # "Rex learned sit!"
 
 - `@field` is shorthand for `self.field`
 - `@` parameters in constructors auto-assign to `self`
+- `super(args)` calls the parent's version of the current method
 - Methods use `:` for definition and calling (Lua method syntax)
 - The `constructor` method is called automatically by `new`
 - The last expression in a method is implicitly returned (except in `constructor`)
@@ -677,6 +695,7 @@ breeze -h                     Show help
 | `typeof x`                     | `type(x)`                                         |
 | `value?`                       | `(value ~= nil)`                                  |
 | `class Dog extends Animal`    | metatable + `__index` chain                       |
+| `super(args)`                  | `Parent.method(self, args)`                       |
 
 ---
 

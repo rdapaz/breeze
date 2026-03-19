@@ -1,25 +1,29 @@
 # Classes in Breeze
 
 class Animal
-  constructor: (@name, @sound = "...") ->
+  constructor: (@name, @sound = "...") =>
     @legs = 4
 
-  speak: ->
+  speak: =>
     "#{@name} says #{@sound}"
 
-  describe: ->
+  describe: =>
     "#{@name} has #{@legs} legs"
 
 class Dog extends Animal
-  constructor: (@name) ->
-    @sound = "Woof!"
+  constructor: (@name) =>
+    super(@name, "Woof!")
     @tricks = []
 
-  learn: (trick) ->
+  speak: =>
+    parent_says = super()
+    "#{parent_says} (but LOUDER)"
+
+  learn: (trick) =>
     @tricks[#@tricks + 1] = trick
     "#{@name} learned #{trick}!"
 
-  show_tricks: ->
+  show_tricks: =>
     if #@tricks == 0
       "#{@name} knows no tricks"
     else
